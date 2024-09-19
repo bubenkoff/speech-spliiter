@@ -11,6 +11,7 @@ from importlib.metadata import version
 
 import moviepy.editor as mp
 from pydub import AudioSegment
+from pydub.utils import mediainfo
 from openai import OpenAI
 import nltk
 from progress.spinner import Spinner
@@ -92,7 +93,7 @@ def get_sentences_as_audio(sentences, original_audio, words, language):
     return result
 
 
-def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir):
+def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir, audio_bitrate):
     # Generate a responsive html file with the sentences and corresponding audio players
     with open(os.path.join(output_dir, f"{title}.html"), "w") as file:
         file.write(
@@ -143,7 +144,7 @@ def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spi
             # end_word = item["end_word"]
             # write to tempfile
             with tempfile.TemporaryFile(dir=temp_dir) as audio_file:
-                audio_segment.export(audio_file, format="mp3")
+                audio_segment.export(audio_file, format="mp3", bitrate=f"{audio_bitrate}k")
                 audio_file.seek(0)
                 # encode the file data to base64
                 encoded = base64.b64encode(audio_file.read()).decode("utf-8")
@@ -186,10 +187,31 @@ def float_range(mini=None, maxi=None):
     return float_range_checker
 
 
+def text_to_speech(text_path, temp_dir):
+    logger.info("\nConverting text to speech...")
+    with open(text_path, "r") as file:
+        text = file.read()
+        response = client.audio.speech.create(
+            model="tts-1-hd",
+            voice="alloy",
+            input=text,
+        )
+        audio_path = os.path.join(temp_dir, "text_audio.mp3")
+        response.write_to_file(audio_path)
+        logger.info("\nText converted to speech successfully!")
+        return audio_path
+
+
 def main():
     # DEBUG = os.getenv("DEBUG", False)
     parser = argparse.ArgumentParser(description="Split a speech audio into separate sentences for language learners.")
-    parser.add_argument("input_path", type=str, help="Path to the input file (audio or video).")
+    parser.add_argument(
+        "input_path",
+        type=str,
+        help="""Path to the input file (audio, video, or text).
+                If it's a video file, the audio will be extracted.
+                If it's a text file, the text will be converted to speech.""",
+    )
     parser.add_argument("output_path", type=str, help="Path to save the output file(s).")
     parser.add_argument(
         "--offset",
@@ -236,18 +258,22 @@ def main():
             elif input_content_type.startswith("audio"):
                 logger.info("\nInput file is an audio file.")
                 audio_path = input_path
+            elif input_content_type.startswith("text"):
+                audio_path = text_to_speech(input_path, temp_dir)
             else:
                 logger.error("\nError: Input file is not a valid audio or video file.")
                 sys.exit(1)
             # Load the original audio for accurate sentence splitting
             audio = AudioSegment.from_mp3(audio_path)
+            audio_bitrate = mediainfo(audio_path)["bit_rate"]
+
             spinner.next()
 
             if args.offset:
                 audio = audio[args.offset * 1000 :]
                 # save audio to a new file
                 audio_path = os.path.join(temp_dir, "offset_audio.mp3")
-                audio.export(audio_path, format="mp3")
+                audio.export(audio_path, format="mp3", bitrate=f"{audio_bitrate}k")
                 spinner.next()
 
             # Transcribe the chunks and combine the text
@@ -256,15 +282,17 @@ def main():
 
             if args.log_level == "DEBUG":
                 # save the audio to a file
-                audio.export(os.path.join(output_dir, "extracted_audio.mp3"), format="mp3")
+                audio.export(
+                    os.path.join(output_dir, f"{title}_extracted_audio.mp3"), format="mp3", bitrate=f"{audio_bitrate}k"
+                )
 
                 # save the transcribed text to a file
-                with open(os.path.join(output_dir, "transcribed_text.txt"), "w") as file:
+                with open(os.path.join(output_dir, f"{title}_transcribed_text.txt"), "w") as file:
                     file.write(full_text)
                 spinner.next()
 
                 # save words to a file
-                with open(os.path.join(output_dir, "words.json"), "w") as file:
+                with open(os.path.join(output_dir, f"${title}_words.json"), "w") as file:
                     file.write(str(words))
                 spinner.next()
 
@@ -276,6 +304,6 @@ def main():
             audio_sentences = get_sentences_as_audio(sentences, audio, words, language)
             spinner.next()
 
-            generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir)
+            generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir, audio_bitrate)
 
         logger.info("\nAudio split into sentences successfully!")

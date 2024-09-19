@@ -13,10 +13,10 @@
 Speech Splitter is a command-line tool designed to split a speech audio into separate sentences. This tool aims to make it easier for language learners to train the hearing, pronounciation and word accents.
 
 > [!WARNING]
-> It uses OpenAI API and requires an API key to work, which is not provided with the package. It can also be quite expensive to use, depending on the size of the book.
+> It uses OpenAI API and requires an API key to work, which is not provided with the package. It can also be quite expensive to use, depending on the size of the provided source.
 
 ## Motivation
-This tool was developed by request of a Dutch teacher. She wanted to have a tool that would split the audio of a book into separate sentences, so that the students could listen to each sentence separately and repeat after it.
+This tool was developed by request of a Dutch teacher. She wanted to have a tool that would split the audio of a provided source into separate sentences, so that the students could listen to each sentence separately and repeat after it.
 
 ## Installation
 To install Speech Splitter, follow these steps:
@@ -58,13 +58,31 @@ Run the command:
 speech-split --help
 ``
 
-## Example Command
+## Example Commands
 
 ``
 speech-split audio.mp3 ./output
 ``
 
 This command will read `audio.mp3`, get the transcription, split it into sentences, align the audio fragments accordingly, and save the result as `output/audio.html`, that can be viewed by the browser.
+
+
+``
+speech-split video.mp4 ./output
+``
+
+This command will read `video.mp4`, split the audio, get the transcription, split it into sentences, align the audio fragments accordingly, and save the result as `output/video.html`, that can be viewed by the browser.
+
+
+``
+speech-split text.txt ./output
+``
+
+This command will read `text.txt`, convert text too speech, get the transcription, split it into sentences, align the audio fragments accordingly, and save the result as `output/text.html`, that can be viewed by the browser.
+
+## Demo
+
+You can see the demo of the tool in action [here](https://bubenkoff.github.io/speech-splitter.github.io/demo.html).
 
 ## Requirements
 The dependencies will be installed automatically during the package installation process.
