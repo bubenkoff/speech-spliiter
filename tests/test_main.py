@@ -4,10 +4,14 @@ from speech_splitter.splitter import main
 
 def test_main(mocker, tmp_path):
     def create_transcription(**params):
-        return Transcription(text="Hello, world!", language="english", words=[
-            {"start": 0.0, "end": 0.5, "word": "Hello"},
-            {"start": 0.5, "end": 1.0, "word": "world"},
-        ])
+        return Transcription(
+            text="Hello, world!",
+            language="english",
+            words=[
+                {"start": 0.0, "end": 0.5, "word": "Hello"},
+                {"start": 0.5, "end": 1.0, "word": "world"},
+            ],
+        )
 
     patched = mocker.patch(
         # api_call is from slow.py but imported to main.py
@@ -30,3 +34,4 @@ def test_main(mocker, tmp_path):
     assert html_path.exists()
     html_text = html_path.read_text()
     assert "Hello, world!" in html_text
+    assert "<audio" in html_text

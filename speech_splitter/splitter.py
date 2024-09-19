@@ -92,7 +92,7 @@ def get_sentences_as_audio(sentences, original_audio, words, language):
     return result
 
 
-def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner):
+def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir):
     # Generate a responsive html file with the sentences and corresponding audio players
     with open(os.path.join(output_dir, f"{title}.html"), "w") as file:
         file.write(
@@ -142,7 +142,7 @@ def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spi
             # start_word = item["start_word"]
             # end_word = item["end_word"]
             # write to tempfile
-            with tempfile.TemporaryFile() as audio_file:
+            with tempfile.TemporaryFile(dir=temp_dir) as audio_file:
                 audio_segment.export(audio_file, format="mp3")
                 audio_file.seek(0)
                 # encode the file data to base64
@@ -225,54 +225,57 @@ def main():
         output_dir = args.output_path
         os.makedirs(output_dir, exist_ok=True)
 
-        # check if the input file is a video file using the file extension and mime type check
-        input_content_type = mimetypes.guess_type(input_path)[0]
-        if input_content_type.startswith("video"):
-            logger.info("\nInput file is a video file.")
-            # Extract audio from the video
-            audio_path = os.path.join(output_dir, "extracted_audio.mp3")
-            video = mp.VideoFileClip(input_path)
-            video.audio.write_audiofile(audio_path)
-        elif input_content_type.startswith("audio"):
-            logger.info("\nInput file is an audio file.")
-            audio_path = input_path
-        else:
-            logger.error("\nError: Input file is not a valid audio or video file.")
-            sys.exit(1)
-        # Load the original audio for accurate sentence splitting
-        audio = AudioSegment.from_mp3(audio_path)
-        spinner.next()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_content_type = mimetypes.guess_type(input_path)[0]
+            if input_content_type.startswith("video"):
+                logger.info("\nInput file is a video file.")
+                # Extract audio from the video
+                audio_path = os.path.join(temp_dir, "audio.mp3")
+                video = mp.VideoFileClip(input_path)
+                video.audio.write_audiofile(audio_path)
+            elif input_content_type.startswith("audio"):
+                logger.info("\nInput file is an audio file.")
+                audio_path = input_path
+            else:
+                logger.error("\nError: Input file is not a valid audio or video file.")
+                sys.exit(1)
+            # Load the original audio for accurate sentence splitting
+            audio = AudioSegment.from_mp3(audio_path)
+            spinner.next()
 
-        if args.offset:
-            audio = audio[args.offset * 1000 :]
-            # save audio to a temp file
+            if args.offset:
+                audio = audio[args.offset * 1000 :]
+                # save audio to a new file
+                audio_path = os.path.join(temp_dir, "offset_audio.mp3")
+                audio.export(audio_path, format="mp3")
+                spinner.next()
 
-        audio_path = os.path.join(output_dir, "extracted_audio.mp3")
-        audio.export(audio_path, format="mp3")
-        spinner.next()
+            # Transcribe the chunks and combine the text
+            language, full_text, words = transcribe_audio(audio_path)
+            spinner.next()
 
-        # Transcribe the chunks and combine the text
-        language, full_text, words = transcribe_audio(audio_path)
-        spinner.next()
+            if args.log_level == "DEBUG":
+                # save the audio to a file
+                audio.export(os.path.join(output_dir, "extracted_audio.mp3"), format="mp3")
 
-        # save the transcribed text to a file
-        with open(os.path.join(output_dir, "transcribed_text.txt"), "w") as file:
-            file.write(full_text)
-        spinner.next()
+                # save the transcribed text to a file
+                with open(os.path.join(output_dir, "transcribed_text.txt"), "w") as file:
+                    file.write(full_text)
+                spinner.next()
 
-        # save words to a file
-        with open(os.path.join(output_dir, "words.json"), "w") as file:
-            file.write(str(words))
-        spinner.next()
+                # save words to a file
+                with open(os.path.join(output_dir, "words.json"), "w") as file:
+                    file.write(str(words))
+                spinner.next()
 
-        # Split the transcribed text into sentences
-        sentences = split_text_into_sentences(full_text, language)
-        spinner.next()
+            # Split the transcribed text into sentences
+            sentences = split_text_into_sentences(full_text, language)
+            spinner.next()
 
-        # Save each sentence as a separate audio file
-        audio_sentences = get_sentences_as_audio(sentences, audio, words, language)
-        spinner.next()
+            # Save each sentence as a separate audio file
+            audio_sentences = get_sentences_as_audio(sentences, audio, words, language)
+            spinner.next()
 
-        generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner)
+            generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir)
 
         logger.info("\nAudio split into sentences successfully!")
