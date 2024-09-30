@@ -14,6 +14,7 @@ from pydub import AudioSegment
 from pydub.utils import mediainfo
 from openai import OpenAI
 import nltk
+from nltk import tokenize
 from progress.spinner import Spinner
 
 # require environment variables
@@ -43,16 +44,16 @@ def split_text_into_sentences(text, language):
     return nltk.sent_tokenize(text, language=language)
 
 
+wordTokenizer = tokenize.TweetTokenizer()
+
+
 # Split the given text into words
 def split_text_into_words(text, language):
-    return [
-        x
-        for x in nltk.word_tokenize(text, language=language)
-        if x not in string.punctuation and x[0] not in string.punctuation
-    ]
+    res = [x for x in wordTokenizer.tokenize(text) if x not in string.punctuation and x[0] not in string.punctuation]
+    return res
 
 
-def get_boundary_words(word_index, sentence, words, language):
+def get_boundary_words(sentence_index, word_index, sentence, words, language):
     sentence_words = split_text_into_words(sentence, language)
     start_word = words[word_index]
     end_word = start_word
@@ -62,6 +63,10 @@ def get_boundary_words(word_index, sentence, words, language):
         # it, so correct the word index
         if audio_word["word"].lower() != sentence_word.lower():
             while not sentence_word.lower().endswith(audio_word["word"].lower()):
+                logger.warning(
+                    f"Correcting word in sentence {sentence_index+1}: "
+                    "{audio_word['word']} to {sentence_word} (word index: {word_index+1})"
+                )
                 word_index += 1
                 if word_index > len(words) - 1:
                     break
@@ -78,8 +83,8 @@ def get_boundary_words(word_index, sentence, words, language):
 def get_sentences_as_audio(sentences, original_audio, words, language):
     word_index = 0
     result = []
-    for sentence in sentences:
-        start_word, end_word, word_index = get_boundary_words(word_index, sentence, words, language)
+    for index, sentence in enumerate(sentences):
+        start_word, end_word, word_index = get_boundary_words(index, word_index, sentence, words, language)
         start_time = start_word["start"]
         # add time buffer before the start
         start_time = start_time - 0.1
@@ -292,7 +297,7 @@ def main():
                 spinner.next()
 
                 # save words to a file
-                with open(os.path.join(output_dir, f"${title}_words.json"), "w") as file:
+                with open(os.path.join(output_dir, f"{title}_words.json"), "w") as file:
                     file.write(str(words))
                 spinner.next()
 
