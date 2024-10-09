@@ -138,9 +138,16 @@ def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spi
             file.write(
                 f"""
             <section>
-                <p>{full_text}</p>
+                <div style="max-height: 50vh; overflow: auto;">
+                    <p>{full_text}</p>
+                </div>
                 <audio controls><source src="{src}" type="audio/mpeg"></audio>
-            </section>"""
+            </section>
+            <section>
+                <button id="toggleAutoplay">Automatisch afspelen inschakelen</button>
+            </section>
+            <div style="max-height: 50vh; overflow: auto;">
+            """
             )
         for i, sentence in enumerate(sentences):
             item = audio_sentences[i]
@@ -165,6 +172,34 @@ def generate_html(audio_path, sentences, output_dir, title, audio_sentences, spi
             spinner.next()
         file.write(
             """
+            </div>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                    const audioElements = document.querySelectorAll('audio');
+                    const toggleButton = document.getElementById('toggleAutoplay');
+                    let autoplayEnabled = false;
+
+                    toggleButton.addEventListener('click', () => {
+                        autoplayEnabled = !autoplayEnabled;
+                        toggleButton.textContent = autoplayEnabled ? 'Automatisch afspelen uitschakelen' :
+                            'Automatisch afspelen inschakelen';
+                    });
+
+                    audioElements.forEach((audio, index) => {
+                        audio.addEventListener('ended', () => {
+                            if (autoplayEnabled) {
+                                const nextAudio = audioElements[index + 1];
+                                if (nextAudio) {
+                                    setTimeout(() => {
+                                        nextAudio.parentElement.scrollIntoView({ behavior: 'smooth' });
+                                        nextAudio.play();
+                                    }, 1.5 * audio.duration * 1000);
+                                }
+                            }
+                        });
+                    });
+                });
+            </script>
             </body>
             </html>"""
         )
@@ -213,7 +248,10 @@ def main():
     parser.add_argument(
         "input_path",
         type=str,
-        help="""Path to the input file (audio, video, or text).
+        metavar="path",
+        action="store",
+        nargs="+",
+        help="""Path to the input file(s) (audio, video, or text).
                 If it's a video file, the audio will be extracted.
                 If it's a text file, the text will be converted to speech.""",
     )
@@ -243,72 +281,69 @@ def main():
         raise ValueError("Input and output paths cannot be the same.")
     with Spinner("Loading...") as spinner:
         nltk.download("punkt_tab")
-        spinner.next()
-
-        # Set your OpenAI API key from environment variable
-
-        input_path = args.input_path
-        title = os.path.basename(input_path).split(".")[0]
         output_dir = args.output_path
         os.makedirs(output_dir, exist_ok=True)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            input_content_type = mimetypes.guess_type(input_path)[0]
-            if input_content_type.startswith("video"):
-                logger.info("\nInput file is a video file.")
-                # Extract audio from the video
-                audio_path = os.path.join(temp_dir, "audio.mp3")
-                video = mp.VideoFileClip(input_path)
-                video.audio.write_audiofile(audio_path)
-            elif input_content_type.startswith("audio"):
-                logger.info("\nInput file is an audio file.")
-                audio_path = input_path
-            elif input_content_type.startswith("text"):
-                audio_path = text_to_speech(input_path, temp_dir)
-            else:
-                logger.error("\nError: Input file is not a valid audio or video file.")
-                sys.exit(1)
-            # Load the original audio for accurate sentence splitting
-            audio = AudioSegment.from_mp3(audio_path)
-            audio_bitrate = mediainfo(audio_path)["bit_rate"]
-
+        for input_path in args.input_path:
             spinner.next()
+            title = os.path.basename(input_path).split(".")[0]
 
-            if args.offset:
-                audio = audio[args.offset * 1000 :]
-                # save audio to a new file
-                audio_path = os.path.join(temp_dir, "offset_audio.mp3")
-                audio.export(audio_path, format="mp3", bitrate=f"{audio_bitrate}k")
+            with tempfile.TemporaryDirectory() as temp_dir:
+                input_content_type = mimetypes.guess_type(input_path)[0]
+                if input_content_type.startswith("video"):
+                    logger.info("\nInput file is a video file.")
+                    # Extract audio from the video
+                    audio_path = os.path.join(temp_dir, "audio.mp3")
+                    video = mp.VideoFileClip(input_path)
+                    video.audio.write_audiofile(audio_path)
+                elif input_content_type.startswith("audio"):
+                    logger.info("\nInput file is an audio file.")
+                    audio_path = input_path
+                elif input_content_type.startswith("text"):
+                    audio_path = text_to_speech(input_path, temp_dir)
+                else:
+                    logger.error("\nError: Input file is not a valid audio or video file.")
+                    sys.exit(1)
+                # Load the original audio for accurate sentence splitting
+                audio = AudioSegment.from_mp3(audio_path)
+                audio_bitrate = mediainfo(audio_path)["bit_rate"]
+
                 spinner.next()
 
-            # Transcribe the chunks and combine the text
-            language, full_text, words = transcribe_audio(audio_path)
-            spinner.next()
+                if args.offset:
+                    audio = audio[args.offset * 1000 :]
+                    # save audio to a new file
+                    audio_path = os.path.join(temp_dir, "offset_audio.mp3")
+                    audio.export(audio_path, format="mp3", bitrate=f"{audio_bitrate}k")
+                    spinner.next()
 
-            if args.log_level == "DEBUG":
-                # save the audio to a file
-                audio.export(
-                    os.path.join(output_dir, f"{title}_extracted_audio.mp3"), format="mp3", bitrate=f"{audio_bitrate}k"
-                )
-
-                # save the transcribed text to a file
-                with open(os.path.join(output_dir, f"{title}_transcribed_text.txt"), "w") as file:
-                    file.write(full_text)
+                # Transcribe the chunks and combine the text
+                language, full_text, words = transcribe_audio(audio_path)
                 spinner.next()
 
-                # save words to a file
-                with open(os.path.join(output_dir, f"{title}_words.json"), "w") as file:
-                    file.write(str(words))
+                if args.log_level == "DEBUG":
+                    # save the audio to a file
+                    audio.export(
+                        os.path.join(output_dir, f"{title}_extracted_audio.mp3"), format="mp3", bitrate=f"{audio_bitrate}k"
+                    )
+
+                    # save the transcribed text to a file
+                    with open(os.path.join(output_dir, f"{title}_transcribed_text.txt"), "w") as file:
+                        file.write(full_text)
+                    spinner.next()
+
+                    # save words to a file
+                    with open(os.path.join(output_dir, f"{title}_words.json"), "w") as file:
+                        file.write(str(words))
+                    spinner.next()
+
+                # Split the transcribed text into sentences
+                sentences = split_text_into_sentences(full_text, language)
                 spinner.next()
 
-            # Split the transcribed text into sentences
-            sentences = split_text_into_sentences(full_text, language)
-            spinner.next()
+                # Save each sentence as a separate audio file
+                audio_sentences = get_sentences_as_audio(sentences, audio, words, language)
+                spinner.next()
 
-            # Save each sentence as a separate audio file
-            audio_sentences = get_sentences_as_audio(sentences, audio, words, language)
-            spinner.next()
+                generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir, audio_bitrate)
 
-            generate_html(audio_path, sentences, output_dir, title, audio_sentences, spinner, temp_dir, audio_bitrate)
-
-        logger.info("\nAudio split into sentences successfully!")
+            logger.info("\nAudio split into sentences successfully!")
