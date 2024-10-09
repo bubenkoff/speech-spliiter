@@ -65,7 +65,7 @@ def get_boundary_words(sentence_index, word_index, sentence, words, language):
             while not sentence_word.lower().endswith(audio_word["word"].lower()):
                 logger.warning(
                     f"Correcting word in sentence {sentence_index+1}: "
-                    "{audio_word['word']} to {sentence_word} (word index: {word_index+1})"
+                    f"{audio_word['word']} to {sentence_word} (word index: {word_index+1})"
                 )
                 word_index += 1
                 if word_index > len(words) - 1:
